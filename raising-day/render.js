@@ -6,7 +6,7 @@ const { spawn } = require('child_process');
     '-c:v','libx264','-preset','medium','-crf','18','-pix_fmt','yuv420p','-movflags','+faststart', out], { stdio: ['pipe','ignore','inherit'] });
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
-  await p.goto(''file://' + require('path').join(__dirname, 'scene.html')?capture');
+  await p.goto('file://' + require('path').join(__dirname, 'scene.html') + '?capture');
   await p.evaluate(() => document.fonts.ready);
   const n = 12 * FPS;
   for (let i = 0; i < n; i++) {
