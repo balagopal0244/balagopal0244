@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raising Day Sunrise</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; }
+  body { display: grid; place-items: center; overflow: hidden; }
+  canvas { width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="3840" height="2160"></canvas>
+<script>
+/*
+  Aerial sunrise over a thermal power plant with cooling towers and a solar field.
+  Golden morning light, slow cinematic drone push-in, 3840x2160.
+  Rendering is a pure function of time t (seconds), so frames can be captured
+  deterministically: window.renderAt(t). Opened normally, it plays in a loop.
+*/
+const DURATION = 12;
+const W = 3840, H = 2160;
+const HORIZON = 1123;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ---------- helpers ----------
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const smooth = (a, b, v) => { const k = clamp((v - a) / (b - a)); return k * k * (3 - 2 * k); };
+const easeInOut = k => k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const frac = v => v - Math.floor(v);
+function rand(seed) { const s = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+function mixColor(c1, c2, k) {
+  return [0, 1, 2].map(i => Math.round(lerp(c1[i], c2[i], k)));
+}
+const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+// Camera: slow push-in with gentle forward descent. Parallax via per-layer zoom.
+function camera(t) {
+  const k = easeInOut(clamp(t / DURATION));
+  return { k, zoom: 1 + 0.17 * k, dolly: 46 * k, drift: 40 * k, fx: W * 0.52, fy: HORIZON + 80 };
+}
+function layer(cam, depth, fn) {
+  const z = 1 + (cam.zoom - 1) * depth;
+  ctx.save();
+  ctx.translate(cam.fx, cam.fy - cam.drift * depth);
+  ctx.scale(z, z);
+  ctx.translate(-cam.fx, -cam.fy);
+  fn();
+  ctx.restore();
+}
+
+// ---------- scene ----------
+function render(t) {
+  const cam = camera(t);
+  const rise = smooth(0, DURATION, t);               // 0..1 sun progress
+  const sun = { x: 2480, y: lerp(HORIZON + 30, HORIZON - 330, rise) };
+  const warm = mixColor([255, 120, 50], [255, 196, 110], rise); // light colour shifts warmer→golden
+  const light = lerp(0.55, 1, rise);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+
+  layer(cam, 0.08, () => drawSky(sun, rise, warm, t));
+  layer(cam, 0.18, () => drawClouds(sun, rise, warm, t));
+  layer(cam, 0.3, () => drawHills(sun, rise, warm));
+  layer(cam, 0.55, () => drawMidground(sun, rise, warm, light, t));
+  drawSolarField(cam, sun, rise, warm, light);
+  layer(cam, 0.08, () => drawGodRays(sun, rise, warm, t));
+  drawGrade(sun, rise, warm, cam);
+  drawTitle(t);
+}
+
+function drawSky(sun, rise, warm, t) {
+  const pad = 600;
+  const top = mixColor([22, 30, 66], [58, 92, 150], rise);
+  const mid = mixColor([150, 70, 90], [228, 140, 110], rise);
+  const low = mixColor([255, 150, 70], [255, 210, 140], rise);
+  const g = ctx.createLinearGradient(0, -pad, 0, HORIZON + 40);
+  g.addColorStop(0, rgba(top));
+  g.addColorStop(0.55, rgba(mid));
+  g.addColorStop(0.9, rgba(low));
+  g.addColorStop(1, rgba(mixColor(low, [255, 235, 190], 0.5)));
+  ctx.fillStyle = g;
+  ctx.fillRect(-pad, -pad, W + pad * 2, HORIZON + pad + 60);
+
+  // big atmospheric glow
+  let r = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 2200);
+  r.addColorStop(0, rgba([255, 236, 190], 0.85));
+  r.addColorStop(0.12, rgba(warm, 0.5));
+  r.addColorStop(0.45, rgba(warm, 0.14));
+  r.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = r;
+  ctx.fillRect(-pad, -pad, W + pad * 2, HORIZON + pad + 60);
+
+  // sun disc
+  r = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 170);
+  r.addColorStop(0, 'rgba(255,255,245,1)');
+  r.addColorStop(0.45, 'rgba(255,248,215,1)');
+  r.addColorStop(0.62, rgba([255, 214, 140], 0.75));
+  r.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = r;
+  ctx.beginPath(); ctx.arc(sun.x, sun.y, 170, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawClouds(sun, rise, warm, t) {
+  const clouds = [
+    [400, 330, 900, 70], [1300, 210, 1200, 60], [2900, 300, 1100, 80],
+    [3400, 520, 800, 50], [700, 640, 1000, 46], [1900, 560, 700, 40],
+    [3000, 760, 1300, 38], [-100, 860, 900, 34], [2200, 880, 900, 28]
+  ];
+  clouds.forEach(([x, y, w, h], i) => {
+    const dx = x + t * (8 + i * 2);
+    const dist = Math.hypot(dx - sun.x, y - sun.y);
+    const lit = clamp(1 - dist / 2600);
+    const base = mixColor([110, 70, 110], [210, 150, 150], rise);
+    const rim = mixColor(base, [255, 225, 170], 0.35 + 0.6 * lit);
+    for (let j = 0; j < 7; j++) {
+      const ox = (rand(i * 13 + j) - 0.5) * w * 0.8;
+      const oy = (rand(i * 7 + j * 3) - 0.5) * h * 0.8;
+      const rw = w * (0.25 + rand(i + j * 5) * 0.3), rh = h * (0.6 + rand(i * 3 + j) * 0.6);
+      const g = ctx.createLinearGradient(0, y + oy - rh, 0, y + oy + rh);
+      g.addColorStop(0, rgba(base, 0.0));
+      g.addColorStop(0.5, rgba(base, 0.22));
+      g.addColorStop(1, rgba(rim, 0.42));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(dx + ox, y + oy, rw, rh, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function ridge(y0, amp, seed, color, hazeTop) {
+  ctx.beginPath();
+  ctx.moveTo(-700, HORIZON + 200);
+  for (let x = -700; x <= W + 700; x += 24) {
+    const y = y0 - amp * (0.55 * Math.sin(x * 0.0011 + seed) + 0.3 * Math.sin(x * 0.0031 + seed * 2.3) + 0.15 * Math.sin(x * 0.0083 + seed * 5.1));
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W + 700, HORIZON + 200);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, y0 - amp, 0, HORIZON + 120);
+  g.addColorStop(0, hazeTop);
+  g.addColorStop(1, color);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+function drawHills(sun, rise, warm) {
+  ridge(HORIZON - 40, 70, 1.3, rgba(mixColor([150, 95, 115], [205, 150, 140], rise)), rgba(mixColor([220, 140, 120], [250, 205, 170], rise), 0.9));
+  ridge(HORIZON + 10, 55, 4.1, rgba(mixColor([95, 65, 95], [150, 115, 120], rise)), rgba(mixColor([175, 110, 115], [225, 175, 150], rise)));
+  // horizon haze line
+  const g = ctx.createLinearGradient(0, HORIZON - 80, 0, HORIZON + 60);
+  g.addColorStop(0, rgba(warm, 0));
+  g.addColorStop(0.6, rgba([255, 220, 170], 0.35));
+  g.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(-700, HORIZON - 80, W + 1400, 140);
+}
+
+// ---------- power plant ----------
+const TOWERS = [
+  { x: 360, base: 1262, h: 380, wb: 250 },
+  { x: 760, base: 1300, h: 540, wb: 360 },
+  { x: 1190, base: 1292, h: 580, wb: 390 },
+  { x: 1600, base: 1282, h: 510, wb: 340 },
+];
+const CHIMNEY = { x: 2020, base: 1290, h: 860, wb: 78, wt: 48 };
+
+function drawMidground(sun, rise, warm, light, t) {
+  // plain between hills and pond
+  let g = ctx.createLinearGradient(0, HORIZON, 0, 1400);
+  g.addColorStop(0, rgba(mixColor([120, 85, 90], [175, 135, 110], rise)));
+  g.addColorStop(1, rgba(mixColor([60, 48, 52], [92, 78, 62], rise)));
+  ctx.fillStyle = g;
+  ctx.fillRect(-900, HORIZON + 5, W + 1800, 420);
+
+  // warm sheen on the land under the sun
+  g = ctx.createRadialGradient(sun.x, HORIZON + 40, 0, sun.x, HORIZON + 40, 1600);
+  g.addColorStop(0, rgba([255, 205, 140], 0.45 * light));
+  g.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(-900, HORIZON + 5, W + 1800, 420);
+
+  drawPylons(sun, rise, warm);
+  drawBuildings(sun, rise, warm, light);
+  drawChimney(sun, rise, warm, light, t);
+  [...TOWERS].forEach((tw, i) => drawTower(tw, i, sun, rise, warm, light));
+  TOWERS.forEach((tw, i) => drawSteam(tw, i, sun, rise, warm, t));
+  drawPond(sun, rise, warm, light, t);
+}
+
+function towerPath(tw) {
+  const { x, base, h, wb } = tw;
+  const top = base - h, waistY = base - h * 0.72, ww = wb * 0.6, wt = wb * 0.68;
+  ctx.beginPath();
+  ctx.moveTo(x - wb / 2, base);
+  ctx.bezierCurveTo(x - wb * 0.42, base - h * 0.35, x - ww / 2, waistY + h * 0.08, x - ww / 2, waistY);
+  ctx.quadraticCurveTo(x - ww / 2, top + h * 0.12, x - wt / 2, top);
+  ctx.lineTo(x + wt / 2, top);
+  ctx.quadraticCurveTo(x + ww / 2, top + h * 0.12, x + ww / 2, waistY);
+  ctx.bezierCurveTo(x + ww / 2, waistY + h * 0.08, x + wb * 0.42, base - h * 0.35, x + wb / 2, base);
+  ctx.closePath();
+  return { top, wt };
+}
+
+function drawTower(tw, i, sun, rise, warm, light) {
+  const { x, base, h, wb } = tw;
+  const shadow = mixColor([58, 50, 72], [96, 88, 104], rise);
+  const mid = mixColor([135, 105, 110], [190, 165, 150], rise);
+  const lit = mixColor([240, 160, 105], [255, 220, 170], rise);
+  const { top, wt } = towerPath(tw);
+  const g = ctx.createLinearGradient(x - wb / 2, 0, x + wb / 2, 0);
+  g.addColorStop(0, rgba(shadow));
+  g.addColorStop(0.45, rgba(mid));
+  g.addColorStop(0.8, rgba(lit));
+  g.addColorStop(1, rgba(mixColor(lit, [255, 245, 220], 0.4 * light)));
+  ctx.fillStyle = g;
+  ctx.fill();
+  // vertical concrete texture
+  ctx.save();
+  ctx.clip();
+  const v = ctx.createLinearGradient(0, top, 0, base);
+  v.addColorStop(0, 'rgba(255,240,220,0.10)');
+  v.addColorStop(1, 'rgba(20,15,30,0.28)');
+  ctx.fillStyle = v;
+  ctx.fillRect(x - wb, top, wb * 2, h);
+  ctx.strokeStyle = 'rgba(40,30,40,0.06)';
+  ctx.lineWidth = 2;
+  for (let k = -12; k <= 12; k++) {
+    ctx.beginPath(); ctx.moveTo(x + k * wb / 24, top); ctx.lineTo(x + k * wb / 24 * 1.4, base); ctx.stroke();
+  }
+  // support columns at base
+  ctx.fillStyle = 'rgba(25,20,35,0.55)';
+  ctx.fillRect(x - wb, base - h * 0.035, wb * 2, h * 0.035);
+  ctx.restore();
+  // rim
+  ctx.fillStyle = rgba(mixColor(shadow, [30, 25, 40], 0.4));
+  ctx.beginPath(); ctx.ellipse(x, top, wt / 2, wt * 0.06, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rgba(lit, 0.8); ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(x, top, wt / 2, wt * 0.06, 0, -0.2, Math.PI * 0.6); ctx.stroke();
+}
+
+function drawSteam(tw, i, sun, rise, warm, t) {
+  const { x, base, h, wb } = tw;
+  const top = base - h, wt = wb * 0.68;
+  const N = 30;
+  const scale = h / 540;
+  for (let j = N - 1; j >= 0; j--) {
+    const p = frac(t * 0.045 + j / N + i * 0.17);
+    const n1 = rand(j * 3.1 + i * 17), n2 = rand(j * 5.7 + i * 11);
+    const px = x + (p * p * 900 + p * 120) * scale + (n1 - 0.5) * 120 * p * scale;
+    const py = top - p * 820 * scale - (n2 - 0.5) * 60 * p;
+    const r = (wt * 0.42 + p * 340 * scale) * (0.8 + n2 * 0.4);
+    const a = smooth(0, 0.06, p) * Math.pow(1 - p, 1.5) * 0.55;
+    if (a < 0.003) continue;
+    const toSun = Math.atan2(sun.y - py, sun.x - px);
+    const ox = Math.cos(toSun) * r * 0.45, oy = Math.sin(toSun) * r * 0.45;
+    const g = ctx.createRadialGradient(px + ox, py + oy, r * 0.05, px, py, r);
+    const litC = mixColor([255, 205, 160], [255, 240, 215], rise);
+    const shC = mixColor([150, 115, 140], [205, 185, 185], rise);
+    g.addColorStop(0, rgba(litC, a));
+    g.addColorStop(0.55, rgba(mixColor(litC, shC, 0.6), a * 0.8));
+    g.addColorStop(1, rgba(shC, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawChimney(sun, rise, warm, light, t) {
+  const { x, base, h, wb, wt } = CHIMNEY;
+  const top = base - h;
+  const g = ctx.createLinearGradient(x - wb / 2, 0, x + wb / 2, 0);
+  g.addColorStop(0, rgba(mixColor([60, 52, 72], [100, 92, 104], rise)));
+  g.addColorStop(0.7, rgba(mixColor([200, 140, 110], [235, 205, 170], rise)));
+  g.addColorStop(1, rgba(mixColor([255, 180, 120], [255, 230, 190], rise)));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x - wb / 2, base); ctx.lineTo(x - wt / 2, top); ctx.lineTo(x + wt / 2, top); ctx.lineTo(x + wb / 2, base); ctx.closePath();
+  ctx.fill();
+  // aviation bands
+  ctx.save(); ctx.clip();
+  for (let k = 0; k < 4; k++) {
+    ctx.fillStyle = k % 2 ? 'rgba(235,225,215,0.85)' : 'rgba(190,60,45,0.85)';
+    ctx.fillRect(x - wb, top + k * 32, wb * 2, 32);
+  }
+  ctx.fillStyle = 'rgba(30,20,30,0.25)';
+  ctx.fillRect(x - wb, top, wb * 0.45, h);
+  ctx.restore();
+  // warning light blink
+  const blink = frac(t * 0.8) < 0.12 ? 1 : 0.15;
+  const rg = ctx.createRadialGradient(x, top - 6, 0, x, top - 6, 40);
+  rg.addColorStop(0, `rgba(255,70,50,${0.9 * blink})`);
+  rg.addColorStop(1, 'rgba(255,70,50,0)');
+  ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, top - 6, 40, 0, Math.PI * 2); ctx.fill();
+  // faint flue plume drifting right
+  for (let j = 0; j < 14; j++) {
+    const p = frac(t * 0.05 + j / 14);
+    const px = x + p * 700, py = top - 20 - p * 160 - Math.sin(p * 3 + j) * 20;
+    const r = 20 + p * 160, a = smooth(0, 0.1, p) * (1 - p) * 0.18;
+    const gg = ctx.createRadialGradient(px, py, 0, px, py, r);
+    gg.addColorStop(0, rgba(mixColor([230, 190, 170], [245, 230, 215], rise), a));
+    gg.addColorStop(1, 'rgba(230,210,200,0)');
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function box(x, y, w, h, sideW, rise, light) {
+  // front face
+  const front = ctx.createLinearGradient(0, y, 0, y + h);
+  front.addColorStop(0, rgba(mixColor([90, 72, 88], [140, 120, 120], rise)));
+  front.addColorStop(1, rgba(mixColor([45, 38, 52], [72, 64, 70], rise)));
+  ctx.fillStyle = front; ctx.fillRect(x, y, w, h);
+  // sunlit side (right)
+  ctx.fillStyle = rgba(mixColor([220, 140, 100], [245, 205, 160], rise), 0.95);
+  ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + sideW, y - sideW * 0.35); ctx.lineTo(x + w + sideW, y + h - sideW * 0.35); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+  // roof
+  ctx.fillStyle = rgba(mixColor([160, 110, 100], [215, 185, 160], rise));
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + sideW, y - sideW * 0.35); ctx.lineTo(x + w + sideW, y - sideW * 0.35); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
+  // windows
+  ctx.fillStyle = `rgba(255,200,120,${0.35 * (1 - rise * 0.6)})`;
+  for (let r = y + 18; r < y + h - 14; r += 26) for (let c = x + 12; c < x + w - 10; c += 30) {
+    if (rand(r * 0.37 + c * 0.11) > 0.55) ctx.fillRect(c, r, 12, 6);
+  }
+}
+
+function drawBuildings(sun, rise, warm, light) {
+  box(1780, 1060, 200, 230, 60, rise, light);   // boiler house
+  box(2080, 1120, 300, 170, 70, rise, light);   // turbine hall
+  box(1450, 1200, 160, 90, 40, rise, light);
+  box(2420, 1200, 180, 90, 40, rise, light);
+  box(220, 1235, 140, 50, 30, rise, light);
+  // coal conveyor gallery
+  ctx.strokeStyle = rgba(mixColor([70, 55, 70], [110, 95, 100], rise));
+  ctx.lineWidth = 12;
+  ctx.beginPath(); ctx.moveTo(1880, 1080); ctx.lineTo(2700, 1270); ctx.stroke();
+  ctx.lineWidth = 4;
+  for (let k = 0; k < 6; k++) { const px = 2000 + k * 120; const py = 1080 + (px - 1880) * 0.2317; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, 1285); ctx.stroke(); }
+}
+
+function drawPylons(sun, rise, warm) {
+  const pyl = [[2850, 1270, 210], [3300, 1250, 170], [3680, 1235, 140], [4100, 1222, 115]];
+  const col = rgba(mixColor([60, 45, 60], [90, 75, 80], rise));
+  ctx.strokeStyle = col; ctx.lineWidth = 4;
+  pyl.forEach(([x, b, h]) => {
+    const w = h * 0.22;
+    ctx.beginPath();
+    ctx.moveTo(x - w, b); ctx.lineTo(x, b - h); ctx.lineTo(x + w, b);
+    ctx.moveTo(x - w * 1.6, b - h * 0.72); ctx.lineTo(x + w * 1.6, b - h * 0.72);
+    ctx.moveTo(x - w * 1.2, b - h * 0.86); ctx.lineTo(x + w * 1.2, b - h * 0.86);
+    for (let k = 0; k < 5; k++) { const y1 = b - h * k / 6, y2 = b - h * (k + 1) / 6; const s1 = w * (1 - k / 6), s2 = w * (1 - (k + 1) / 6); ctx.moveTo(x - s1, y1); ctx.lineTo(x + s2, y2); ctx.moveTo(x + s1, y1); ctx.lineTo(x - s2, y2); }
+    ctx.stroke();
+  });
+  // conductors with golden glint
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = rgba(mixColor([255, 190, 130], [255, 230, 190], rise), 0.55);
+  const from = [2500, 1150];
+  [-1.6, 1.6, 1.2].forEach((side, s) => {
+    let prev = [from[0] + side * 30, from[1] + s * 20];
+    pyl.forEach(([x, b, h]) => {
+      const w = h * 0.22;
+      const yy = b - h * (s === 2 ? 0.86 : 0.72);
+      const nx = x + side * w;
+      ctx.beginPath(); ctx.moveTo(prev[0], prev[1]);
+      ctx.quadraticCurveTo((prev[0] + nx) / 2, (prev[1] + yy) / 2 + 40, nx, yy); ctx.stroke();
+      prev = [nx, yy];
+    });
+  });
+}
+
+function drawPond(sun, rise, warm, light, t) {
+  const y0 = 1300, y1 = 1385;
+  ctx.beginPath();
+  ctx.moveTo(-900, y0 + 10);
+  for (let x = -900; x <= W + 900; x += 40) ctx.lineTo(x, y0 + Math.sin(x * 0.003) * 8 + Math.sin(x * 0.011) * 4);
+  for (let x = W + 900; x >= -900; x -= 40) ctx.lineTo(x, y1 + Math.sin(x * 0.002 + 1) * 10);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, rgba(mixColor([240, 150, 110], [255, 215, 170], rise)));
+  g.addColorStop(1, rgba(mixColor([120, 80, 110], [170, 140, 150], rise)));
+  ctx.fillStyle = g; ctx.fill();
+  ctx.save(); ctx.clip();
+  // sun glitter column
+  for (let k = 0; k < 90; k++) {
+    const yy = y0 + rand(k * 1.7) * (y1 - y0);
+    const spread = 60 + (yy - y0) * 1.4;
+    const xx = sun.x + (rand(k * 2.3 + Math.floor(t * 6) * 0.01) - 0.5) * spread * 2;
+    const a = 0.5 + 0.5 * Math.sin(t * 5 + k);
+    ctx.fillStyle = `rgba(255,250,225,${0.55 * a})`;
+    ctx.fillRect(xx, yy, 30 + rand(k) * 50, 3);
+  }
+  // tower reflections
+  ctx.globalAlpha = 0.18;
+  TOWERS.forEach(tw => {
+    ctx.fillStyle = 'rgba(40,30,50,1)';
+    ctx.fillRect(tw.x - tw.wb * 0.4, y0, tw.wb * 0.8, y1 - y0);
+  });
+  ctx.restore();
+  // far bank
+  ctx.fillStyle = rgba(mixColor([40, 32, 42], [70, 60, 58], rise), 0.7);
+  ctx.fillRect(-900, y1 + 4, W + 1800, 6);
+}
+
+// ---------- solar field: true perspective, camera dollies forward ----------
+const CAM_H = 60, FOCAL = 1800;
+function proj(X, Z, elev, cam) {
+  const z = Z - cam.dolly;
+  return [W * 0.52 + X * FOCAL / z, HORIZON + (CAM_H - elev) * FOCAL / z];
+}
+
+function drawSolarField(cam, sun, rise, warm, light) {
+  // ground
+  const yTop = proj(0, 700, 0, cam)[1] - 0;
+  let g = ctx.createLinearGradient(0, 1380, 0, H);
+  g.addColorStop(0, rgba(mixColor([110, 80, 70], [165, 130, 95], rise)));
+  g.addColorStop(1, rgba(mixColor([55, 40, 40], [88, 70, 52], rise)));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 1385, W, H);
+  // golden wash on ground toward sun
+  g = ctx.createRadialGradient(sun.x, 1350, 0, sun.x, 1350, 2400);
+  g.addColorStop(0, rgba([255, 200, 130], 0.35 * light));
+  g.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 1385, W, H);
+
+  const rows = [];
+  for (let Z = 112; Z < 430; Z += 11) rows.push(Z);
+  const zMin = cam.dolly + 70;
+  // draw far → near
+  for (let ri = rows.length - 1; ri >= 0; ri--) {
+    const Z = rows[ri];
+    if (Z - 6 < zMin) continue;
+    const blocks = [[-420, -46], [-30, 520]];
+    blocks.forEach(([xa, xb]) => {
+      // shadow on ground in front of row
+      const s1 = proj(xa, Z, 0, cam), s2 = proj(xb, Z, 0, cam), s3 = proj(xb, Z - 4.5, 0, cam), s4 = proj(xa, Z - 4.5, 0, cam);
+      ctx.fillStyle = 'rgba(30,20,30,0.28)';
+      ctx.beginPath(); ctx.moveTo(...s1); ctx.lineTo(...s2); ctx.lineTo(...s3); ctx.lineTo(...s4); ctx.closePath(); ctx.fill();
+      // panel quad: front edge low (0.6m), back edge high (2.8m)
+      const a = proj(xa, Z, 0.6, cam), b = proj(xb, Z, 0.6, cam), c = proj(xb, Z + 4.2, 2.8, cam), d = proj(xa, Z + 4.2, 2.8, cam);
+      const pg = ctx.createLinearGradient(a[0], 0, b[0], 0);
+      const span = b[0] - a[0];
+      const fog = clamp((Z - 110) / 520);
+      const base = mixColor(mixColor([22, 30, 62], [30, 46, 84], rise), mixColor([150, 110, 120], [200, 170, 160], rise), fog * 0.75);
+      const sky = mixColor(base, mixColor([200, 120, 110], [230, 175, 150], rise), 0.45);
+      const glint = [255, 236, 190];
+      const stops = 9;
+      for (let k = 0; k <= stops; k++) {
+        const sx = a[0] + span * k / stops;
+        const gl = Math.exp(-Math.pow((sx - sun.x) / (300 + Z * 1.2), 2)) * light;
+        pg.addColorStop(k / stops, rgba(mixColor(mixColor(base, sky, 0.35 + 0.2 * Math.sin(k)), glint, gl * 0.85)));
+      }
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.lineTo(...c); ctx.lineTo(...d); ctx.closePath(); ctx.fill();
+      // module grid
+      const pxPerM = FOCAL / (Z - cam.dolly);
+      if (pxPerM > 2.2) {
+        ctx.strokeStyle = `rgba(10,14,30,${0.45 * (1 - fog)})`;
+        ctx.lineWidth = Math.max(1, pxPerM * 0.08);
+        ctx.beginPath();
+        const step = pxPerM > 8 ? 2 : 4;
+        for (let X = Math.ceil(xa / step) * step; X <= xb; X += step) {
+          const p1 = proj(X, Z, 0.6, cam), p2 = proj(X, Z + 4.2, 2.8, cam);
+          if (p1[0] < -50 && p2[0] < -50) continue;
+          if (p1[0] > W + 50 && p2[0] > W + 50) continue;
+          ctx.moveTo(...p1); ctx.lineTo(...p2);
+        }
+        const m1 = proj(xa, Z + 2.1, 1.7, cam), m2 = proj(xb, Z + 2.1, 1.7, cam);
+        ctx.moveTo(...m1); ctx.lineTo(...m2);
+        ctx.stroke();
+        // lit top edge
+        ctx.strokeStyle = rgba([255, 220, 170], 0.35 * (1 - fog) * light);
+        ctx.lineWidth = Math.max(1, pxPerM * 0.1);
+        ctx.beginPath(); ctx.moveTo(...d); ctx.lineTo(...c); ctx.stroke();
+      }
+    });
+  }
+  // service road (between blocks) catches the light
+  const r1 = proj(-44, 430, 0, cam), r2 = proj(-32, 430, 0, cam), r3 = proj(-32, cam.dolly + 70, 0, cam), r4 = proj(-44, cam.dolly + 70, 0, cam);
+  ctx.fillStyle = rgba(mixColor([170, 120, 95], [215, 180, 140], rise), 0.35);
+  ctx.beginPath(); ctx.moveTo(...r1); ctx.lineTo(...r2); ctx.lineTo(...r3); ctx.lineTo(...r4); ctx.closePath(); ctx.fill();
+  // haze where field meets pond
+  g = ctx.createLinearGradient(0, 1370, 0, 1520);
+  g.addColorStop(0, rgba(mixColor([240, 170, 140], [250, 215, 180], rise), 0.55));
+  g.addColorStop(1, rgba(warm, 0));
+  ctx.fillStyle = g; ctx.fillRect(0, 1370, W, 150);
+}
+
+function drawGodRays(sun, rise, warm, t) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 9; i++) {
+    const ang = Math.PI * (0.62 + i * 0.09) + Math.sin(t * 0.15 + i) * 0.015;
+    const len = 2400, spread = 0.025 + rand(i) * 0.03;
+    const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, len);
+    g.addColorStop(0, rgba(warm, 0.045 * (0.5 + rise)));
+    g.addColorStop(1, rgba(warm, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(sun.x, sun.y);
+    ctx.lineTo(sun.x + Math.cos(ang - spread) * len, sun.y + Math.sin(ang - spread) * len);
+    ctx.lineTo(sun.x + Math.cos(ang + spread) * len, sun.y + Math.sin(ang + spread) * len);
+    ctx.closePath(); ctx.fill();
+  }
+  // lens flare ghosts along sun→centre axis
+  const cx = W / 2, cy = H / 2;
+  [[0.5, 60, 0.05], [0.9, 110, 0.04], [1.3, 40, 0.06], [1.6, 160, 0.03]].forEach(([k, r, a]) => {
+    const x = lerp(sun.x, cx, k), y = lerp(sun.y, cy, k);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, rgba([255, 210, 150], a));
+    g.addColorStop(1, rgba([255, 210, 150], 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawGrade(sun, rise, warm, cam) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // warm overall bloom
+  ctx.save();
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = rgba(mixColor([255, 140, 80], [255, 190, 120], rise), 0.35);
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+  // vignette
+  const v = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.45, W / 2, H * 0.55, H * 1.25);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(8,4,12,0.62)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  // fade in from black at start
+  const fin = 1 - smooth(0, 1.4, renderTime);
+  if (fin > 0) { ctx.fillStyle = `rgba(0,0,0,${fin})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- title ----------
+function spaced(text, x, y, tracking, align) {
+  // draws text with letter-spacing, centred on x
+  const chars = [...text];
+  const widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((s, w) => s + w, 0) + tracking * (chars.length - 1);
+  let cx = align === 'center' ? x - total / 2 : x;
+  chars.forEach((c, i) => { ctx.fillText(c, cx, y); cx += widths[i] + tracking; });
+  return total;
+}
+
+function drawTitle(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const a1 = smooth(2.4, 4.2, t), a2 = smooth(3.2, 5.0, t), a3 = smooth(4.2, 5.8, t);
+  if (a1 <= 0) return;
+  const cx = W / 2, by = 1720;
+
+  // soft scrim for legibility
+  const s = ctx.createLinearGradient(0, 1400, 0, H);
+  s.addColorStop(0, 'rgba(10,6,14,0)');
+  s.addColorStop(1, `rgba(10,6,14,${0.6 * a1})`);
+  ctx.fillStyle = s; ctx.fillRect(0, 1400, W, H - 1400);
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(20,8,10,0.55)';
+  ctx.shadowBlur = 30;
+
+  // eyebrow: NTPC Limited
+  ctx.font = '600 64px "Inter Display", Inter, sans-serif';
+  ctx.fillStyle = `rgba(255,226,170,${a1})`;
+  spaced('NTPC LIMITED', cx, by - 250 + (1 - a1) * 30, lerp(36, 22, a1), 'center');
+
+  // headline: Raising Day
+  ctx.font = '700 260px Caladea, "DejaVu Serif", serif';
+  const hg = ctx.createLinearGradient(0, by - 220, 0, by);
+  hg.addColorStop(0, `rgba(255,248,232,${a2})`);
+  hg.addColorStop(1, `rgba(255,214,140,${a2})`);
+  ctx.fillStyle = hg;
+  spaced('Raising Day', cx, by + (1 - a2) * 50, lerp(30, 6, a2), 'center');
+
+  // rules + date
+  ctx.shadowBlur = 0;
+  const ruleW = 420 * a3;
+  ctx.fillStyle = `rgba(255,214,140,${0.9 * a3})`;
+  ctx.fillRect(cx - 360 - ruleW, by + 128, ruleW, 4);
+  ctx.fillRect(cx + 360, by + 128, ruleW, 4);
+  ctx.shadowBlur = 24;
+  ctx.font = '500 76px "Inter Display", Inter, sans-serif';
+  ctx.fillStyle = `rgba(255,240,215,${a3})`;
+  spaced('7 NOVEMBER', cx, by + 156, 18, 'center');
+  ctx.shadowBlur = 0;
+}
+
+// ---------- driver ----------
+let renderTime = 0;
+window.renderAt = t => { renderTime = t; render(t); };
+window.DURATION = DURATION;
+if (!new URLSearchParams(location.search).has('capture')) {
+  const start = performance.now();
+  const loop = now => {
+    const t = ((now - start) / 1000) % (DURATION + 2);
+    window.renderAt(Math.min(t, DURATION));
+    requestAnimationFrame(loop);
+  };
+  document.fonts.ready.then(() => requestAnimationFrame(loop));
+}
+</script>
+</body>
+</html>
