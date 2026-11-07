@@ -20,6 +20,8 @@
   deterministically: window.renderAt(t). Opened normally, it plays in a loop.
 */
 const DURATION = 15;
+// Brand blue (approximate corporate blue; replace with the exact hex if you have it).
+const BRAND = [0, 79, 159], BRAND_LIGHT = [74, 152, 230], NAVY = [6, 28, 72];
 const W = 3840, H = 2160;
 const HORIZON = 1123;
 const canvas = document.getElementById('c');
@@ -57,7 +59,7 @@ function render(t) {
   const cam = camera(t);
   const rise = smooth(0, DURATION, t);               // 0..1 sun progress
   const sun = { x: 2480, y: lerp(HORIZON + 30, HORIZON - 330, rise) };
-  const warm = mixColor([255, 120, 50], [255, 196, 110], rise); // light colour shifts warmer→golden
+  const warm = mixColor([255, 150, 70], [255, 205, 130], rise); // light colour shifts warmer→golden
   const light = lerp(0.55, 1, rise);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -75,22 +77,22 @@ function render(t) {
 
 function drawSky(sun, rise, warm, t) {
   const pad = 600;
-  const top = mixColor([22, 30, 66], [58, 92, 150], rise);
-  const mid = mixColor([150, 70, 90], [228, 140, 110], rise);
-  const low = mixColor([255, 150, 70], [255, 210, 140], rise);
+  const top = mixColor([4, 18, 52], [8, 46, 118], rise);
+  const mid = mixColor([18, 66, 140], [46, 120, 200], rise);
+  const low = mixColor([150, 170, 210], [190, 215, 240], rise);
   const g = ctx.createLinearGradient(0, -pad, 0, HORIZON + 40);
   g.addColorStop(0, rgba(top));
-  g.addColorStop(0.55, rgba(mid));
-  g.addColorStop(0.9, rgba(low));
-  g.addColorStop(1, rgba(mixColor(low, [255, 235, 190], 0.5)));
+  g.addColorStop(0.6, rgba(mid));
+  g.addColorStop(0.92, rgba(low));
+  g.addColorStop(1, rgba([255, 214, 150]));
   ctx.fillStyle = g;
   ctx.fillRect(-pad, -pad, W + pad * 2, HORIZON + pad + 60);
 
   // big atmospheric glow
-  let r = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 2200);
+  let r = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 1300);
   r.addColorStop(0, rgba([255, 236, 190], 0.85));
-  r.addColorStop(0.12, rgba(warm, 0.5));
-  r.addColorStop(0.45, rgba(warm, 0.14));
+  r.addColorStop(0.12, rgba(warm, 0.45));
+  r.addColorStop(0.45, rgba(warm, 0.08));
   r.addColorStop(1, rgba(warm, 0));
   ctx.fillStyle = r;
   ctx.fillRect(-pad, -pad, W + pad * 2, HORIZON + pad + 60);
@@ -115,8 +117,8 @@ function drawClouds(sun, rise, warm, t) {
     const dx = x + t * (8 + i * 2);
     const dist = Math.hypot(dx - sun.x, y - sun.y);
     const lit = clamp(1 - dist / 2600);
-    const base = mixColor([110, 70, 110], [210, 150, 150], rise);
-    const rim = mixColor(base, [255, 225, 170], 0.35 + 0.6 * lit);
+    const base = mixColor([40, 70, 130], [130, 170, 220], rise);
+    const rim = mixColor(base, [255, 225, 170], 0.1 + 0.75 * lit * lit);
     for (let j = 0; j < 7; j++) {
       const ox = (rand(i * 13 + j) - 0.5) * w * 0.8;
       const oy = (rand(i * 7 + j * 3) - 0.5) * h * 0.8;
@@ -150,12 +152,12 @@ function ridge(y0, amp, seed, color, hazeTop) {
 }
 
 function drawHills(sun, rise, warm) {
-  ridge(HORIZON - 40, 70, 1.3, rgba(mixColor([150, 95, 115], [205, 150, 140], rise)), rgba(mixColor([220, 140, 120], [250, 205, 170], rise), 0.9));
-  ridge(HORIZON + 10, 55, 4.1, rgba(mixColor([95, 65, 95], [150, 115, 120], rise)), rgba(mixColor([175, 110, 115], [225, 175, 150], rise)));
+  ridge(HORIZON - 40, 70, 1.3, rgba(mixColor([40, 70, 125], [95, 135, 185], rise)), rgba(mixColor([90, 120, 170], [160, 190, 225], rise), 0.9));
+  ridge(HORIZON + 10, 55, 4.1, rgba(mixColor([22, 45, 90], [55, 90, 140], rise)), rgba(mixColor([60, 90, 140], [120, 155, 200], rise)));
   // horizon haze line
   const g = ctx.createLinearGradient(0, HORIZON - 80, 0, HORIZON + 60);
   g.addColorStop(0, rgba(warm, 0));
-  g.addColorStop(0.6, rgba([255, 220, 170], 0.35));
+  g.addColorStop(0.6, rgba([255, 220, 170], 0.18));
   g.addColorStop(1, rgba(warm, 0));
   ctx.fillStyle = g;
   ctx.fillRect(-700, HORIZON - 80, W + 1400, 140);
@@ -173,14 +175,14 @@ const CHIMNEY = { x: 2020, base: 1290, h: 860, wb: 78, wt: 48 };
 function drawMidground(sun, rise, warm, light, t) {
   // plain between hills and pond
   let g = ctx.createLinearGradient(0, HORIZON, 0, 1400);
-  g.addColorStop(0, rgba(mixColor([120, 85, 90], [175, 135, 110], rise)));
-  g.addColorStop(1, rgba(mixColor([60, 48, 52], [92, 78, 62], rise)));
+  g.addColorStop(0, rgba(mixColor([45, 70, 115], [100, 130, 170], rise)));
+  g.addColorStop(1, rgba(mixColor([14, 30, 62], [36, 60, 96], rise)));
   ctx.fillStyle = g;
   ctx.fillRect(-900, HORIZON + 5, W + 1800, 420);
 
   // warm sheen on the land under the sun
   g = ctx.createRadialGradient(sun.x, HORIZON + 40, 0, sun.x, HORIZON + 40, 1600);
-  g.addColorStop(0, rgba([255, 205, 140], 0.45 * light));
+  g.addColorStop(0, rgba([255, 205, 140], 0.3 * light));
   g.addColorStop(1, rgba(warm, 0));
   ctx.fillStyle = g;
   ctx.fillRect(-900, HORIZON + 5, W + 1800, 420);
@@ -209,9 +211,9 @@ function towerPath(tw) {
 
 function drawTower(tw, i, sun, rise, warm, light) {
   const { x, base, h, wb } = tw;
-  const shadow = mixColor([58, 50, 72], [96, 88, 104], rise);
-  const mid = mixColor([135, 105, 110], [190, 165, 150], rise);
-  const lit = mixColor([240, 160, 105], [255, 220, 170], rise);
+  const shadow = mixColor([18, 36, 74], [45, 72, 115], rise);
+  const mid = mixColor([70, 95, 140], [140, 165, 200], rise);
+  const lit = mixColor([225, 190, 160], [250, 228, 195], rise);
   const { top, wt } = towerPath(tw);
   const g = ctx.createLinearGradient(x - wb / 2, 0, x + wb / 2, 0);
   g.addColorStop(0, rgba(shadow));
@@ -260,8 +262,8 @@ function drawSteam(tw, i, sun, rise, warm, t) {
     const toSun = Math.atan2(sun.y - py, sun.x - px);
     const ox = Math.cos(toSun) * r * 0.45, oy = Math.sin(toSun) * r * 0.45;
     const g = ctx.createRadialGradient(px + ox, py + oy, r * 0.05, px, py, r);
-    const litC = mixColor([255, 205, 160], [255, 240, 215], rise);
-    const shC = mixColor([150, 115, 140], [205, 185, 185], rise);
+    const litC = mixColor([235, 225, 220], [255, 245, 230], rise);
+    const shC = mixColor([80, 110, 165], [170, 195, 228], rise);
     g.addColorStop(0, rgba(litC, a));
     g.addColorStop(0.55, rgba(mixColor(litC, shC, 0.6), a * 0.8));
     g.addColorStop(1, rgba(shC, 0));
@@ -274,8 +276,8 @@ function drawChimney(sun, rise, warm, light, t) {
   const { x, base, h, wb, wt } = CHIMNEY;
   const top = base - h;
   const g = ctx.createLinearGradient(x - wb / 2, 0, x + wb / 2, 0);
-  g.addColorStop(0, rgba(mixColor([60, 52, 72], [100, 92, 104], rise)));
-  g.addColorStop(0.7, rgba(mixColor([200, 140, 110], [235, 205, 170], rise)));
+  g.addColorStop(0, rgba(mixColor([20, 38, 76], [50, 76, 118], rise)));
+  g.addColorStop(0.7, rgba(mixColor([130, 150, 185], [200, 210, 225], rise)));
   g.addColorStop(1, rgba(mixColor([255, 180, 120], [255, 230, 190], rise)));
   ctx.fillStyle = g;
   ctx.beginPath();
@@ -311,14 +313,14 @@ function drawChimney(sun, rise, warm, light, t) {
 function box(x, y, w, h, sideW, rise, light) {
   // front face
   const front = ctx.createLinearGradient(0, y, 0, y + h);
-  front.addColorStop(0, rgba(mixColor([90, 72, 88], [140, 120, 120], rise)));
-  front.addColorStop(1, rgba(mixColor([45, 38, 52], [72, 64, 70], rise)));
+  front.addColorStop(0, rgba(mixColor([30, 55, 100], [70, 100, 145], rise)));
+  front.addColorStop(1, rgba(mixColor([12, 26, 56], [30, 50, 86], rise)));
   ctx.fillStyle = front; ctx.fillRect(x, y, w, h);
   // sunlit side (right)
-  ctx.fillStyle = rgba(mixColor([220, 140, 100], [245, 205, 160], rise), 0.95);
+  ctx.fillStyle = rgba(mixColor([190, 170, 165], [235, 220, 200], rise), 0.95);
   ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + sideW, y - sideW * 0.35); ctx.lineTo(x + w + sideW, y + h - sideW * 0.35); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
   // roof
-  ctx.fillStyle = rgba(mixColor([160, 110, 100], [215, 185, 160], rise));
+  ctx.fillStyle = rgba(mixColor([90, 115, 160], [165, 185, 210], rise));
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + sideW, y - sideW * 0.35); ctx.lineTo(x + w + sideW, y - sideW * 0.35); ctx.lineTo(x + w, y); ctx.closePath(); ctx.fill();
   // windows
   ctx.fillStyle = `rgba(255,200,120,${0.35 * (1 - rise * 0.6)})`;
@@ -334,7 +336,7 @@ function drawBuildings(sun, rise, warm, light) {
   box(2420, 1200, 180, 90, 40, rise, light);
   box(220, 1235, 140, 50, 30, rise, light);
   // coal conveyor gallery
-  ctx.strokeStyle = rgba(mixColor([70, 55, 70], [110, 95, 100], rise));
+  ctx.strokeStyle = rgba(mixColor([20, 40, 80], [50, 75, 115], rise));
   ctx.lineWidth = 12;
   ctx.beginPath(); ctx.moveTo(1880, 1080); ctx.lineTo(2700, 1270); ctx.stroke();
   ctx.lineWidth = 4;
@@ -343,7 +345,7 @@ function drawBuildings(sun, rise, warm, light) {
 
 function drawPylons(sun, rise, warm) {
   const pyl = [[2850, 1270, 210], [3300, 1250, 170], [3680, 1235, 140], [4100, 1222, 115]];
-  const col = rgba(mixColor([60, 45, 60], [90, 75, 80], rise));
+  const col = rgba(mixColor([14, 30, 66], [30, 52, 90], rise));
   ctx.strokeStyle = col; ctx.lineWidth = 4;
   pyl.forEach(([x, b, h]) => {
     const w = h * 0.22;
@@ -379,8 +381,8 @@ function drawPond(sun, rise, warm, light, t) {
   for (let x = W + 900; x >= -900; x -= 40) ctx.lineTo(x, y1 + Math.sin(x * 0.002 + 1) * 10);
   ctx.closePath();
   const g = ctx.createLinearGradient(0, y0, 0, y1);
-  g.addColorStop(0, rgba(mixColor([240, 150, 110], [255, 215, 170], rise)));
-  g.addColorStop(1, rgba(mixColor([120, 80, 110], [170, 140, 150], rise)));
+  g.addColorStop(0, rgba(mixColor([150, 170, 210], [200, 220, 240], rise)));
+  g.addColorStop(1, rgba(mixColor([20, 60, 130], [40, 100, 180], rise)));
   ctx.fillStyle = g; ctx.fill();
   ctx.save(); ctx.clip();
   // sun glitter column
@@ -400,7 +402,7 @@ function drawPond(sun, rise, warm, light, t) {
   });
   ctx.restore();
   // far bank
-  ctx.fillStyle = rgba(mixColor([40, 32, 42], [70, 60, 58], rise), 0.7);
+  ctx.fillStyle = rgba(mixColor([10, 24, 52], [28, 48, 82], rise), 0.7);
   ctx.fillRect(-900, y1 + 4, W + 1800, 6);
 }
 
@@ -415,13 +417,13 @@ function drawSolarField(cam, sun, rise, warm, light) {
   // ground
   const yTop = proj(0, 700, 0, cam)[1] - 0;
   let g = ctx.createLinearGradient(0, 1380, 0, H);
-  g.addColorStop(0, rgba(mixColor([110, 80, 70], [165, 130, 95], rise)));
-  g.addColorStop(1, rgba(mixColor([55, 40, 40], [88, 70, 52], rise)));
+  g.addColorStop(0, rgba(mixColor([50, 70, 105], [105, 125, 150], rise)));
+  g.addColorStop(1, rgba(mixColor([12, 22, 44], [30, 44, 66], rise)));
   ctx.fillStyle = g;
   ctx.fillRect(0, 1385, W, H);
   // golden wash on ground toward sun
   g = ctx.createRadialGradient(sun.x, 1350, 0, sun.x, 1350, 2400);
-  g.addColorStop(0, rgba([255, 200, 130], 0.35 * light));
+  g.addColorStop(0, rgba([255, 200, 130], 0.2 * light));
   g.addColorStop(1, rgba(warm, 0));
   ctx.fillStyle = g;
   ctx.fillRect(0, 1385, W, H);
@@ -444,8 +446,8 @@ function drawSolarField(cam, sun, rise, warm, light) {
       const pg = ctx.createLinearGradient(a[0], 0, b[0], 0);
       const span = b[0] - a[0];
       const fog = clamp((Z - 110) / 520);
-      const base = mixColor(mixColor([22, 30, 62], [30, 46, 84], rise), mixColor([150, 110, 120], [200, 170, 160], rise), fog * 0.75);
-      const sky = mixColor(base, mixColor([200, 120, 110], [230, 175, 150], rise), 0.45);
+      const base = mixColor(mixColor([4, 30, 90], [0, 60, 145], rise), mixColor([90, 125, 180], [150, 185, 225], rise), fog * 0.7);
+      const sky = mixColor(base, mixColor([60, 120, 200], [110, 170, 235], rise), 0.4);
       const glint = [255, 236, 190];
       const stops = 9;
       for (let k = 0; k <= stops; k++) {
@@ -480,11 +482,11 @@ function drawSolarField(cam, sun, rise, warm, light) {
   }
   // service road (between blocks) catches the light
   const r1 = proj(-44, 430, 0, cam), r2 = proj(-32, 430, 0, cam), r3 = proj(-32, cam.dolly + 70, 0, cam), r4 = proj(-44, cam.dolly + 70, 0, cam);
-  ctx.fillStyle = rgba(mixColor([170, 120, 95], [215, 180, 140], rise), 0.35);
+  ctx.fillStyle = rgba(mixColor([120, 140, 175], [190, 200, 215], rise), 0.35);
   ctx.beginPath(); ctx.moveTo(...r1); ctx.lineTo(...r2); ctx.lineTo(...r3); ctx.lineTo(...r4); ctx.closePath(); ctx.fill();
   // haze where field meets pond
   g = ctx.createLinearGradient(0, 1370, 0, 1520);
-  g.addColorStop(0, rgba(mixColor([240, 170, 140], [250, 215, 180], rise), 0.55));
+  g.addColorStop(0, rgba(mixColor([150, 180, 225], [205, 225, 245], rise), 0.5));
   g.addColorStop(1, rgba(warm, 0));
   ctx.fillStyle = g; ctx.fillRect(0, 1370, W, 150);
 }
@@ -521,13 +523,13 @@ function drawGrade(sun, rise, warm, cam) {
   // warm overall bloom
   ctx.save();
   ctx.globalCompositeOperation = 'soft-light';
-  ctx.fillStyle = rgba(mixColor([255, 140, 80], [255, 190, 120], rise), 0.35);
+  ctx.fillStyle = rgba(BRAND, 0.3);
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
   // vignette
   const v = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.45, W / 2, H * 0.55, H * 1.25);
   v.addColorStop(0, 'rgba(0,0,0,0)');
-  v.addColorStop(1, 'rgba(8,4,12,0.62)');
+  v.addColorStop(1, rgba(NAVY, 0.7));
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
   // fade in from black at start
   const fin = 1 - smooth(0, 1.4, renderTime);
@@ -554,7 +556,7 @@ function drawLogo(a) {
   const h = 200, w = h * (LOGO.naturalWidth || LOGO.width) / (LOGO.naturalHeight || LOGO.height);
   ctx.save();
   ctx.globalAlpha = a;
-  ctx.shadowColor = 'rgba(20,8,10,0.45)';
+  ctx.shadowColor = rgba(NAVY, 0.5);
   ctx.shadowBlur = 24;
   ctx.drawImage(LOGO, 140, 120 + (1 - a) * 20, w, h);
   ctx.restore();
@@ -580,36 +582,42 @@ function drawTitle(t) {
 
   // soft scrim for legibility
   const s = ctx.createLinearGradient(0, 1400, 0, H);
-  s.addColorStop(0, 'rgba(10,6,14,0)');
-  s.addColorStop(1, `rgba(10,6,14,${0.6 * a1})`);
+  s.addColorStop(0, rgba(NAVY, 0));
+  s.addColorStop(0.45, rgba(NAVY, 0.55 * a1));
+  s.addColorStop(1, rgba(NAVY, 0.9 * a1));
   ctx.fillStyle = s; ctx.fillRect(0, 1400, W, H - 1400);
+  // brand-blue accent bar along the bottom edge
+  const barW = W * smooth(2.8, 5.2, t);
+  const bar = ctx.createLinearGradient(0, 0, W, 0);
+  bar.addColorStop(0, rgba(BRAND)); bar.addColorStop(1, rgba(BRAND_LIGHT));
+  ctx.fillStyle = bar; ctx.fillRect((W - barW) / 2, H - 28, barW, 28);
 
   ctx.textBaseline = 'alphabetic';
-  ctx.shadowColor = 'rgba(20,8,10,0.55)';
+  ctx.shadowColor = rgba(NAVY, 0.7);
   ctx.shadowBlur = 30;
 
   // eyebrow: NTPC Limited
-  ctx.font = '600 64px "Inter Display", Inter, sans-serif';
-  ctx.fillStyle = `rgba(255,226,170,${a1})`;
+  ctx.font = '700 66px "Inter Display", Inter, sans-serif';
+  ctx.fillStyle = rgba([205, 228, 255], a1);
   spaced('NTPC LIMITED', cx, by - 250 + (1 - a1) * 30, lerp(36, 22, a1), 'center');
 
   // headline: Raising Day
   ctx.font = '700 260px Caladea, "DejaVu Serif", serif';
   const hg = ctx.createLinearGradient(0, by - 220, 0, by);
-  hg.addColorStop(0, `rgba(255,248,232,${a2})`);
-  hg.addColorStop(1, `rgba(255,214,140,${a2})`);
+  hg.addColorStop(0, `rgba(255,255,255,${a2})`);
+  hg.addColorStop(1, rgba([205, 228, 255], a2));
   ctx.fillStyle = hg;
   spaced('Raising Day', cx, by + (1 - a2) * 50, lerp(30, 6, a2), 'center');
 
   // rules + date
   ctx.shadowBlur = 0;
   const ruleW = 420 * a3;
-  ctx.fillStyle = `rgba(255,214,140,${0.9 * a3})`;
+  ctx.fillStyle = rgba(BRAND_LIGHT, a3);
   ctx.fillRect(cx - 360 - ruleW, by + 128, ruleW, 4);
   ctx.fillRect(cx + 360, by + 128, ruleW, 4);
   ctx.shadowBlur = 24;
   ctx.font = '500 76px "Inter Display", Inter, sans-serif';
-  ctx.fillStyle = `rgba(255,240,215,${a3})`;
+  ctx.fillStyle = rgba([255, 255, 255], a3);
   spaced('7 NOVEMBER', cx, by + 156, 18, 'center');
   ctx.shadowBlur = 0;
 }
