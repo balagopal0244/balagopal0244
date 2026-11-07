@@ -19,7 +19,7 @@
   Rendering is a pure function of time t (seconds), so frames can be captured
   deterministically: window.renderAt(t). Opened normally, it plays in a loop.
 */
-const DURATION = 12;
+const DURATION = 15;
 const W = 3840, H = 2160;
 const HORIZON = 1123;
 const canvas = document.getElementById('c');
@@ -534,6 +534,32 @@ function drawGrade(sun, rise, warm, cam) {
   if (fin > 0) { ctx.fillStyle = `rgba(0,0,0,${fin})`; ctx.fillRect(0, 0, W, H); }
 }
 
+// ---------- logo ----------
+// Place the official logo next to this file as logo.png or logo.svg (transparent background).
+// It appears in the top-left corner, fading in with the title. If absent, nothing is drawn.
+let LOGO = null;
+window.logoReady = new Promise(resolve => {
+  const tryLoad = names => {
+    if (!names.length) return resolve(false);
+    const img = new Image();
+    img.onload = () => { LOGO = img; resolve(true); };
+    img.onerror = () => tryLoad(names.slice(1));
+    img.src = names[0];
+  };
+  tryLoad(['logo.svg', 'logo.png']);
+});
+
+function drawLogo(a) {
+  if (!LOGO || a <= 0) return;
+  const h = 200, w = h * (LOGO.naturalWidth || LOGO.width) / (LOGO.naturalHeight || LOGO.height);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.shadowColor = 'rgba(20,8,10,0.45)';
+  ctx.shadowBlur = 24;
+  ctx.drawImage(LOGO, 140, 120 + (1 - a) * 20, w, h);
+  ctx.restore();
+}
+
 // ---------- title ----------
 function spaced(text, x, y, tracking, align) {
   // draws text with letter-spacing, centred on x
@@ -547,7 +573,8 @@ function spaced(text, x, y, tracking, align) {
 
 function drawTitle(t) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  const a1 = smooth(2.4, 4.2, t), a2 = smooth(3.2, 5.0, t), a3 = smooth(4.2, 5.8, t);
+  const a1 = smooth(2.8, 4.8, t), a2 = smooth(3.8, 5.8, t), a3 = smooth(5.0, 6.8, t);
+  drawLogo(smooth(1.6, 3.4, t));
   if (a1 <= 0) return;
   const cx = W / 2, by = 1720;
 
@@ -598,7 +625,7 @@ if (!new URLSearchParams(location.search).has('capture')) {
     window.renderAt(Math.min(t, DURATION));
     requestAnimationFrame(loop);
   };
-  document.fonts.ready.then(() => requestAnimationFrame(loop));
+  Promise.all([document.fonts.ready, window.logoReady]).then(() => requestAnimationFrame(loop));
 }
 </script>
 </body>
